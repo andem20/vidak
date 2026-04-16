@@ -1,3 +1,12 @@
+import * as wasm from "vidak-wasm/vidak_wasm_bg.wasm";
+import { Buffer } from "vidak-wasm/vidak_wasm";
+
+const buffer = Buffer.new();
+console.log(wasm, buffer.ptr(), buffer.len());
+
+const wasmMemory = wasm.memory;
+const view = new Uint8Array(wasmMemory.buffer);
+
 interface VidakChart {
   getCanvas(): HTMLCanvasElement;
   getContext2D(): CanvasRenderingContext2D;
@@ -25,6 +34,7 @@ class VidakChartImpl implements VidakChart {
   render(): void {
     // draw the buffer onto the canvas
     this.testRender();
+    console.log(view.subarray(buffer.ptr(), buffer.ptr() + buffer.len()));
   }
 
   /**
