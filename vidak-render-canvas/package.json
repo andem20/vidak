@@ -9,11 +9,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "apache-arrow": "^21.1.0",
     "vidak-wasm": "file://../vidak-wasm/pkg"
   },
   "devDependencies": {
     "typescript": "~6.0.2",
-    "vite-plugin-wasm": "^3.6.0",
-    "vite": "^8.0.4"
+    "vite": "^8.0.4",
+    "vite-plugin-wasm": "^3.6.0"
   }
 }

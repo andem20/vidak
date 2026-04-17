@@ -1,11 +1,6 @@
 import * as wasm from "vidak-wasm/vidak_wasm_bg.wasm";
 import { Buffer } from "vidak-wasm/vidak_wasm";
-
-const buffer = Buffer.new();
-console.log(wasm, buffer.ptr(), buffer.len());
-
-const wasmMemory = wasm.memory;
-const view = new Uint8Array(wasmMemory.buffer);
+import * as arrow from "apache-arrow";
 
 interface VidakChart {
   getCanvas(): HTMLCanvasElement;
@@ -15,7 +10,11 @@ interface VidakChart {
 
 class VidakChartImpl implements VidakChart {
   private canvas = document.createElement("canvas");
-  private buffer: Uint8Array;
+  private buffer: Buffer;
+
+  constructor() {
+    this.buffer = Buffer.new();
+  }
 
   getContext2D(): CanvasRenderingContext2D {
     const context = this.canvas.getContext("2d");
@@ -34,7 +33,18 @@ class VidakChartImpl implements VidakChart {
   render(): void {
     // draw the buffer onto the canvas
     this.testRender();
-    console.log(view.subarray(buffer.ptr(), buffer.ptr() + buffer.len()));
+    console.log(this.getArrow());
+  }
+
+  getBufferView(): Uint8Array {
+    return new Uint8Array(wasm.memory.buffer).subarray(
+      this.buffer.ptr(),
+      this.buffer.ptr() + this.buffer.len(),
+    );
+  }
+
+  getArrow() {
+    return arrow.tableFromIPC(this.getBufferView());
   }
 
   /**
@@ -60,7 +70,7 @@ export const createVidak = function () {
 
 /**
  * Data layout
- * type; len; data;
+ * type; [len; data;]
  *
  * types: int, float, string, timestamp
  */
