@@ -14,17 +14,26 @@ pub struct Buffer {
 
 #[wasm_bindgen]
 impl Buffer {
-    pub fn new() -> Self {
-        let data = (0..1_000_000)
-            .map(|x| (x as f32).sin())
+    pub fn new(size: usize) -> Self {
+        let data = (0..size)
+            .map(|x| (x as f32 / 10.0).sin() * 50.0)
             .collect::<Vec<f32>>();
 
-        let arrow_array = arrow::array::Float32Array::from(data);
+        let x_data = arrow::array::Float32Array::from(
+            (0..size).map(|x| (x as f32) * 2.0).collect::<Vec<f32>>(),
+        );
+        let y_data = arrow::array::Float32Array::from(data);
 
-        let schema = Schema::new(vec![Field::new("values", DataType::Float32, false)]);
+        let schema = Schema::new(vec![
+            Field::new("x", DataType::Float32, false),
+            Field::new("y", DataType::Float32, false),
+        ]);
 
-        let batch =
-            RecordBatch::try_new(Arc::new(schema.clone()), vec![Arc::new(arrow_array)]).unwrap();
+        let batch = RecordBatch::try_new(
+            Arc::new(schema.clone()),
+            vec![Arc::new(x_data), Arc::new(y_data)],
+        )
+        .unwrap();
 
         let mut bytes = Vec::new();
 
@@ -41,5 +50,9 @@ impl Buffer {
 
     pub fn len(&self) -> usize {
         self.data.len()
+    }
+
+    pub fn free(&mut self) {
+        self.data.clear();
     }
 }

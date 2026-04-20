@@ -13,7 +13,12 @@ class VidakChartImpl implements VidakChart {
   private buffer: Buffer;
 
   constructor() {
-    this.buffer = Buffer.new();
+    // fix unreachable
+    // wasm.buffer_free(0);
+    this.buffer = Buffer.new(1000);
+    this.canvas.width = 500;
+    this.canvas.height = 500;
+    this.canvas.style.backgroundColor = "#ededed";
   }
 
   getContext2D(): CanvasRenderingContext2D {
@@ -33,13 +38,12 @@ class VidakChartImpl implements VidakChart {
   render(): void {
     // draw the buffer onto the canvas
     this.testRender();
-    console.log(this.getArrow());
   }
 
   getBufferView(): Uint8Array {
     return new Uint8Array(wasm.memory.buffer).subarray(
       this.buffer.ptr(),
-      this.buffer.ptr() + this.buffer.len(),
+      this.buffer.ptr() + this.buffer!.len(),
     );
   }
 
@@ -53,13 +57,17 @@ class VidakChartImpl implements VidakChart {
    */
   testRender() {
     const ctx = this.getContext2D();
-    const yOffset = 50;
+    const yOffset = this.canvas.height / 2;
 
     ctx.beginPath();
     ctx.strokeStyle = "#000000";
-    for (let x = 0; x < 100; x++) {
-      ctx.lineTo(x, Math.sin(x) * 10 + yOffset);
+    const arr = this.getArrow();
+    for (let i = 0; i < arr.numRows; i++) {
+      const y = arr.getChild("y")?.get(i);
+      const x = arr.getChild("x")?.get(i);
+      ctx.lineTo(x, y + yOffset);
     }
+    ctx.lineWidth = 3;
     ctx.stroke();
   }
 }
