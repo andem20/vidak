@@ -61,26 +61,61 @@ class VidakChartImpl implements VidakChart {
   testRender() {
     const ctx = this.getContext2D();
 
-    ctx.beginPath();
-    ctx.strokeStyle = "#000000";
     const arr = this.getArrow();
 
     const [minX, _maxX, deltaX] = this.getMinMax(arr.schema, "date").map(
       (x) => x * 86400000,
     );
-    const [minY, _maxY, deltaY] = this.getMinMax(arr.schema, "deaths");
+    const [minY, maxY, deltaY] = this.getMinMax(arr.schema, "deaths");
 
+    const axisOffset = 20;
+
+    const amountLines = 6;
+
+    for (let i = 0; i <= amountLines; i++) {
+      console.log(i);
+      ctx.beginPath();
+      ctx.strokeStyle = "#000000";
+      ctx.lineWidth = 1;
+      const y = (this.height * i) / amountLines + this.inset[1];
+      ctx.moveTo(this.inset[0] - axisOffset, y);
+      ctx.lineTo(this.width, y);
+      ctx.stroke();
+      ctx.strokeText(
+        ((maxY * (amountLines - i)) / amountLines).toString(),
+        50,
+        y,
+      );
+    }
+
+    ctx.beginPath();
+    ctx.strokeStyle = "#000000";
     ctx.lineWidth = 3;
 
     for (let i = 0; i < arr.numRows; i++) {
       const date = arr.getChild("date")?.get(i);
-      const x = this.calcPos(date, minX, deltaX) * this.width;
+      let x = this.calcPos(date, minX, deltaX) * (this.width - this.inset[0]);
       const deaths = arr.getChild("deaths")?.get(i);
-      const y = -this.calcPos(deaths, minY, deltaY) * this.height;
-      console.log(x, y);
-      ctx.lineTo(x + this.inset[0], y + this.height + this.inset[1]);
+      let y = -this.calcPos(deaths, minY, deltaY) * this.height;
+      x += this.inset[0];
+      y += this.height + this.inset[1];
+      ctx.lineTo(x, y);
     }
     ctx.stroke();
+
+    for (let i = 0; i < arr.numRows; i += 2) {
+      // FIXME
+      ctx.beginPath();
+      const date = arr.getChild("date")?.get(i);
+      let x = this.calcPos(date, minX, deltaX) * (this.width - this.inset[0]);
+      const deaths = arr.getChild("deaths")?.get(i);
+      let y = -this.calcPos(deaths, minY, deltaY) * this.height;
+      x += this.inset[0];
+      y += this.height + this.inset[1];
+      ctx.arc(x, y, 5, 0, 2 * Math.PI);
+      ctx.fillStyle = "red";
+      ctx.fill();
+    }
   }
 
   private calcPos(point: number, min: number, delta: number) {
