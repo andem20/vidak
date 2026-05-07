@@ -69,11 +69,16 @@ class VidakChartImpl implements VidakChart {
     const [minY, maxY, deltaY] = this.getMinMax(arr.schema, "deaths");
 
     const axisOffset = 20;
-
     const amountLines = 6;
 
+    ctx.font = "900 0.8rem Arial";
+
+    const dateOptions = {
+      timeZone: "UTC",
+    };
+
+    // draw horizontal lines and labels
     for (let i = 0; i <= amountLines; i++) {
-      console.log(i);
       ctx.beginPath();
       ctx.strokeStyle = "#000000";
       ctx.lineWidth = 1;
@@ -81,9 +86,9 @@ class VidakChartImpl implements VidakChart {
       ctx.moveTo(this.inset[0] - axisOffset, y);
       ctx.lineTo(this.width, y);
       ctx.stroke();
-      ctx.strokeText(
+      ctx.fillText(
         ((maxY * (amountLines - i)) / amountLines).toString(),
-        50,
+        50, // word width
         y,
       );
     }
@@ -92,6 +97,22 @@ class VidakChartImpl implements VidakChart {
     ctx.strokeStyle = "#000000";
     ctx.lineWidth = 3;
 
+    const wordHeight = 50;
+
+    const xLabelWidth = Math.round(
+      ctx.measureText(
+        new Date(arr.getChild("date")?.get(0)).toLocaleString(
+          "da-DK",
+          dateOptions,
+        ),
+      ).width,
+    );
+
+    const xLabelOffset = xLabelWidth / 3;
+
+    let lastXLabel = -1;
+
+    // draw line
     for (let i = 0; i < arr.numRows; i++) {
       const date = arr.getChild("date")?.get(i);
       let x = this.calcPos(date, minX, deltaX) * (this.width - this.inset[0]);
@@ -100,9 +121,28 @@ class VidakChartImpl implements VidakChart {
       x += this.inset[0];
       y += this.height + this.inset[1];
       ctx.lineTo(x, y);
+
+      // draw label
+      let currentXLabel = Math.floor(
+        (x - this.inset[0]) / (xLabelWidth + xLabelOffset),
+      );
+
+      if (currentXLabel > lastXLabel) {
+        ctx.strokeStyle = "#000000";
+        ctx.lineWidth = 1;
+        ctx.fillText(
+          new Date(date).toLocaleString("da-DK", dateOptions),
+          x - xLabelWidth / 2,
+          this.height + this.inset[1] + wordHeight,
+        );
+        lastXLabel = currentXLabel;
+        ctx.strokeStyle = "#000000";
+        ctx.lineWidth = 3;
+      }
     }
     ctx.stroke();
 
+    // draw points
     for (let i = 0; i < arr.numRows; i += 2) {
       // FIXME
       ctx.beginPath();
