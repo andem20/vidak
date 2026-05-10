@@ -40,7 +40,37 @@ class VidakChartImpl implements VidakChart {
 
   render(): void {
     // draw the buffer onto the canvas
-    this.testRender();
+    let end = 200;
+    let start = 0;
+    const arr = this.getArrow();
+    this.testRender(0, end, arr);
+    const maxLength = arr.getChildAt(0)?.length;
+
+    let mouseX = 0;
+    let mouseY = 0;
+    this.canvas.addEventListener("mousemove", (event) => {
+      mouseX = Math.max(
+        Math.min(this.width - this.inset[0], event.offsetX - this.inset[0]),
+        0,
+      );
+      mouseY = Math.max(
+        Math.min(this.height, event.offsetY - this.inset[1]),
+        0,
+      );
+    });
+
+    this.canvas.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      const posX = mouseX / (this.width - this.inset[0]);
+      const delta = event.deltaY / 50;
+      end += delta * (1 - posX);
+      start -= delta * posX;
+      end = Math.floor(Math.max(Math.min(end, maxLength ?? 0), 2));
+      start = Math.floor(Math.max(Math.min(start, end - 2), 0));
+      console.log(start, end);
+      // FIXME should be relative to the mouse cursor
+      this.testRender(start, end, arr);
+    });
   }
 
   getBufferView(): Uint8Array {
@@ -58,36 +88,40 @@ class VidakChartImpl implements VidakChart {
    * Only for testing
    * @deprecated
    */
-  testRender() {
+  testRender(start: number, end: number, arr: arrow.Table) {
     const ctx = this.getContext2D();
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-    const arr = this.getArrow();
+    const size = arr.batches[0].numRows;
+    arr = arr.slice(start, end);
 
-    const [minX, _maxX, deltaX] = this.getMinMax(arr.schema, "date").map(
-      (x) => x * 86400000,
-    );
-    const [minY, maxY, deltaY] = this.getMinMax(arr.schema, "deaths");
-
-    const axisOffset = 20;
-    const amountLines = 6;
-
-    ctx.font = "900 0.8rem Arial";
-
+    // Datetime settings
     const dateOptions = {
       timeZone: "UTC",
     };
+    const locale = "da-DK";
+
+    // FIXME only for datetime
+    const [minX, _maxX, deltaX] = this.getMinMaxDelta(arr, "date");
+    const [minY, maxY, deltaY] = this.getMinMaxDelta(arr, "deaths");
+
+    const axisOffset = 0;
+    const amountLines = 6;
+
+    ctx.font = "500 0.8rem Arial";
+    ctx.fillStyle = "#000000";
 
     // draw horizontal lines and labels
     for (let i = 0; i <= amountLines; i++) {
       ctx.beginPath();
-      ctx.strokeStyle = "#000000";
+      ctx.strokeStyle = "#888888";
       ctx.lineWidth = 1;
       const y = (this.height * i) / amountLines + this.inset[1];
       ctx.moveTo(this.inset[0] - axisOffset, y);
       ctx.lineTo(this.width, y);
       ctx.stroke();
       ctx.fillText(
-        ((maxY * (amountLines - i)) / amountLines).toString(),
+        Math.floor((maxY * (amountLines - i)) / amountLines).toString(),
         50, // word width
         y,
       );
@@ -102,7 +136,7 @@ class VidakChartImpl implements VidakChart {
     const xLabelWidth = Math.round(
       ctx.measureText(
         new Date(arr.getChild("date")?.get(0)).toLocaleString(
-          "da-DK",
+          locale,
           dateOptions,
         ),
       ).width,
@@ -113,7 +147,8 @@ class VidakChartImpl implements VidakChart {
     let lastXLabel = -1;
 
     // draw line
-    for (let i = 0; i < arr.numRows; i++) {
+    // TODO only draw point if non-overlapping
+    for (let i = 0; i < size; i++) {
       const date = arr.getChild("date")?.get(i);
       let x = this.calcPos(date, minX, deltaX) * (this.width - this.inset[0]);
       const deaths = arr.getChild("deaths")?.get(i);
@@ -131,7 +166,7 @@ class VidakChartImpl implements VidakChart {
         ctx.strokeStyle = "#000000";
         ctx.lineWidth = 1;
         ctx.fillText(
-          new Date(date).toLocaleString("da-DK", dateOptions),
+          new Date(date).toLocaleString(locale, dateOptions),
           x - xLabelWidth / 2,
           this.height + this.inset[1] + wordHeight,
         );
@@ -143,7 +178,7 @@ class VidakChartImpl implements VidakChart {
     ctx.stroke();
 
     // draw points
-    for (let i = 0; i < arr.numRows; i += 2) {
+    for (let i = 0; i < size; i++) {
       // FIXME
       ctx.beginPath();
       const date = arr.getChild("date")?.get(i);
@@ -153,7 +188,7 @@ class VidakChartImpl implements VidakChart {
       x += this.inset[0];
       y += this.height + this.inset[1];
       ctx.arc(x, y, 5, 0, 2 * Math.PI);
-      ctx.fillStyle = "red";
+      ctx.fillStyle = "#ff0000";
       ctx.fill();
     }
   }
@@ -162,7 +197,16 @@ class VidakChartImpl implements VidakChart {
     return (point - min) / delta;
   }
 
+  private getMinMaxDelta(arr: arrow.Table, key: string) {
+    const slice = arr.getChild(key);
+    const min = slice?.get(0);
+    const max = slice?.get(slice.length - 1);
+    const delta = max - min;
+    return [min, max, delta];
+  }
+
   private getMinMax(schema: arrow.Schema, key: string) {
+    // FIXME should just grab the first and last element. Assume it's sorted
     const min = parseInt(
       schema.fields.find((f) => f.name === key)?.metadata.get("min") ?? "",
     );
