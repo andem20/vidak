@@ -2,18 +2,150 @@ import * as wasm from "vidak-wasm/vidak_wasm_bg.wasm";
 import { Buffer } from "vidak-wasm/vidak_wasm";
 import * as arrow from "apache-arrow";
 
-interface VidakChart {
+interface Statistics {
+  min: number;
+  max: number;
+  delta: number;
+}
+
+interface VidakChartRenderProps {
+  ctx: CanvasRenderingContext2D;
+  x: arrow.Vector;
+  y: arrow.Vector;
+  wordConfig: {
+    height: number;
+  };
+  canvasConfig: {
+    width: number;
+    height: number;
+    inset: number[];
+  };
+  dateOptions?: {
+    locale: string;
+    timeZone: string;
+  };
+}
+
+interface VidakChartRender {
+  draw(props: VidakChartRenderProps): void;
+}
+
+class VidakChartUtils {
+  static getStatistics(slice: arrow.Vector): Statistics {
+    const min = slice?.get(0);
+    const max = slice?.get(slice.length - 1);
+    const delta = max - min;
+    return { min, max, delta };
+  }
+}
+
+class VidakLineChart implements VidakChartRender {
+  draw(props: VidakChartRenderProps): void {
+    const ctx = props.ctx;
+    const xSlice = props.x;
+    const ySlice = props.y;
+    const xStats = VidakChartUtils.getStatistics(xSlice);
+    const yStats = VidakChartUtils.getStatistics(ySlice);
+    const canvasConfig = props.canvasConfig;
+
+    ctx.beginPath();
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = 3;
+
+    const wordHeight = 50;
+
+    const xLabelWidth = Math.round(
+      ctx.measureText(
+        new Date(xSlice.get(0)).toLocaleString(props.dateOptions?.locale, {
+          timeZone: props.dateOptions?.timeZone,
+        }),
+      ).width,
+    );
+
+    const xLabelOffset = xLabelWidth / 3;
+
+    let lastXLabel = -1;
+
+    const size = xSlice.data[0].length;
+
+    // draw line
+    // TODO only draw point if non-overlapping
+    for (let i = 0; i < size; i++) {
+      const date = xSlice.get(i);
+      let x =
+        this.calcPos(date, xStats.min, xStats.delta) *
+        (canvasConfig.width - canvasConfig.inset[0]);
+      const deaths = ySlice.get(i);
+      let y =
+        -this.calcPos(deaths, yStats.min, yStats.delta) * canvasConfig.height;
+      x += canvasConfig.inset[0];
+      y += canvasConfig.height + canvasConfig.inset[1];
+      ctx.lineTo(x, y);
+
+      // draw label
+      let currentXLabel = Math.floor(
+        (x - canvasConfig.inset[0]) / (xLabelWidth + xLabelOffset),
+      );
+
+      if (currentXLabel > lastXLabel) {
+        ctx.strokeStyle = "#000000";
+        ctx.lineWidth = 1;
+        ctx.fillText(
+          new Date(date).toLocaleString(props.dateOptions?.locale, {
+            timeZone: props.dateOptions?.timeZone,
+          }),
+          x - xLabelWidth / 2,
+          canvasConfig.height + canvasConfig.inset[1] + wordHeight,
+        );
+        lastXLabel = currentXLabel;
+        ctx.strokeStyle = "#000000";
+        ctx.lineWidth = 3;
+      }
+    }
+    ctx.stroke();
+
+    // draw points
+    for (let i = 0; i < size; i++) {
+      // FIXME
+      ctx.beginPath();
+      const date = xSlice.get(i);
+      let x =
+        this.calcPos(date, xStats.min, xStats.delta) *
+        (canvasConfig.width - canvasConfig.inset[0]);
+      const deaths = ySlice.get(i);
+      let y =
+        -this.calcPos(deaths, yStats.min, yStats.delta) * canvasConfig.height;
+      x += canvasConfig.inset[0];
+      y += canvasConfig.height + canvasConfig.inset[1];
+      ctx.arc(x, y, 5, 0, 2 * Math.PI);
+      ctx.fillStyle = "#ff0000";
+      ctx.fill();
+    }
+  }
+
+  private calcPos(point: number, min: number, delta: number) {
+    return (point - min) / delta;
+  }
+}
+
+// CONTAINER
+interface VidakChartContainer {
   getCanvas(): HTMLCanvasElement;
   getContext2D(): CanvasRenderingContext2D;
   render(): void;
 }
 
-class VidakChartImpl implements VidakChart {
+class VidakChartImpl implements VidakChartContainer {
   private canvas = document.createElement("canvas");
   private buffer: Buffer;
   private width: number;
   private height: number;
   private inset = [150, 50, 50, 150]; // left, top, right, bottom
+  private chartTypes: {
+    [key: string]: VidakChartRender;
+  } = {
+    line: new VidakLineChart(),
+  };
 
   constructor(width: number, height: number) {
     this.buffer = Buffer.new(1000000);
@@ -68,6 +200,7 @@ class VidakChartImpl implements VidakChart {
       end = Math.max(Math.min(end, maxLength ?? 0), 2);
       start = Math.max(Math.min(start, end - 2), 0);
       // FIXME should be relative to the mouse cursor
+      // TODO handle horizontal scroll
       this.testRender(start, end, arr);
     });
   }
@@ -75,7 +208,7 @@ class VidakChartImpl implements VidakChart {
   getBufferView(): Uint8Array {
     return new Uint8Array(wasm.memory.buffer).subarray(
       this.buffer.ptr(),
-      this.buffer.ptr() + this.buffer!.len(),
+      this.buffer.ptr() + this.buffer.len(),
     );
   }
 
@@ -87,29 +220,47 @@ class VidakChartImpl implements VidakChart {
    * Only for testing
    * @deprecated
    */
-  testRender(start: number, end: number, arr: arrow.Table) {
+  testRender(start: number, end: number, table: arrow.Table) {
     const ctx = this.getContext2D();
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-    const size = arr.batches[0].numRows;
-    arr = arr.slice(start, end);
-
-    // Datetime settings
-    const dateOptions = {
-      timeZone: "UTC",
-    };
-    const locale = "da-DK";
-
-    // FIXME only for datetime
-    const [minX, _maxX, deltaX] = this.getMinMaxDelta(arr, "date");
-    const [minY, maxY, deltaY] = this.getMinMaxDelta(arr, "deaths");
-
-    const axisOffset = 0;
-    const amountLines = 6;
+    const arrSlice = table.slice(start, end);
 
     ctx.font = "500 0.8rem Arial";
     ctx.fillStyle = "#000000";
 
+    const x = arrSlice.getChild("date")!;
+    const y = arrSlice.getChild("deaths")!;
+
+    // FIXME only for datetime
+    const yStats = VidakChartUtils.getStatistics(y);
+
+    this.drawGrid(yStats.max);
+
+    this.chartTypes["line"].draw({
+      ctx,
+      x,
+      y,
+      dateOptions: {
+        locale: "da-DK",
+        timeZone: "UTC",
+      },
+      wordConfig: {
+        height: 50,
+      },
+      canvasConfig: {
+        width: this.width,
+        height: this.height,
+        inset: this.inset,
+      },
+    });
+  }
+
+  private drawGrid(maxY: number) {
+    const axisOffset = 0;
+    const amountLines = 6;
+
+    const ctx = this.getContext2D();
     // draw horizontal lines and labels
     for (let i = 0; i <= amountLines; i++) {
       ctx.beginPath();
@@ -125,108 +276,9 @@ class VidakChartImpl implements VidakChart {
         y,
       );
     }
-
-    ctx.beginPath();
-    ctx.strokeStyle = "#000000";
-    ctx.lineWidth = 3;
-
-    const wordHeight = 50;
-
-    const xLabelWidth = Math.round(
-      ctx.measureText(
-        new Date(arr.getChild("date")?.get(0)).toLocaleString(
-          locale,
-          dateOptions,
-        ),
-      ).width,
-    );
-
-    const xLabelOffset = xLabelWidth / 3;
-
-    let lastXLabel = -1;
-
-    // draw line
-    // TODO only draw point if non-overlapping
-    for (let i = 0; i < size; i++) {
-      const date = arr.getChild("date")?.get(i);
-      let x = this.calcPos(date, minX, deltaX) * (this.width - this.inset[0]);
-      const deaths = arr.getChild("deaths")?.get(i);
-      let y = -this.calcPos(deaths, minY, deltaY) * this.height;
-      x += this.inset[0];
-      y += this.height + this.inset[1];
-      ctx.lineTo(x, y);
-
-      // draw label
-      let currentXLabel = Math.floor(
-        (x - this.inset[0]) / (xLabelWidth + xLabelOffset),
-      );
-
-      if (currentXLabel > lastXLabel) {
-        ctx.strokeStyle = "#000000";
-        ctx.lineWidth = 1;
-        ctx.fillText(
-          new Date(date).toLocaleString(locale, dateOptions),
-          x - xLabelWidth / 2,
-          this.height + this.inset[1] + wordHeight,
-        );
-        lastXLabel = currentXLabel;
-        ctx.strokeStyle = "#000000";
-        ctx.lineWidth = 3;
-      }
-    }
-    ctx.stroke();
-
-    // draw points
-    for (let i = 0; i < size; i++) {
-      // FIXME
-      ctx.beginPath();
-      const date = arr.getChild("date")?.get(i);
-      let x = this.calcPos(date, minX, deltaX) * (this.width - this.inset[0]);
-      const deaths = arr.getChild("deaths")?.get(i);
-      let y = -this.calcPos(deaths, minY, deltaY) * this.height;
-      x += this.inset[0];
-      y += this.height + this.inset[1];
-      ctx.arc(x, y, 5, 0, 2 * Math.PI);
-      ctx.fillStyle = "#ff0000";
-      ctx.fill();
-    }
-  }
-
-  private calcPos(point: number, min: number, delta: number) {
-    return (point - min) / delta;
-  }
-
-  private getMinMaxDelta(arr: arrow.Table, key: string) {
-    const slice = arr.getChild(key);
-    const min = slice?.get(0);
-    const max = slice?.get(slice.length - 1);
-    const delta = max - min;
-    return [min, max, delta];
-  }
-
-  private getMinMax(schema: arrow.Schema, key: string) {
-    // FIXME should just grab the first and last element. Assume it's sorted
-    const min = parseInt(
-      schema.fields.find((f) => f.name === key)?.metadata.get("min") ?? "",
-    );
-
-    const max = parseInt(
-      schema.fields.find((f) => f.name === key)?.metadata.get("max") ?? "",
-    );
-
-    const delta = max - min;
-
-    return [min, max, delta];
   }
 }
 
 export const createVidak = function () {
   return new VidakChartImpl(1000, 500);
 };
-
-/**
- * Data layout
- * type; [len; data;]
- *
- * types: int, float, string, timestamp
- */
