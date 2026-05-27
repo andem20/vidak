@@ -1,6 +1,6 @@
 pub mod test_data;
 
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use arrow::{
     array::RecordBatch,
@@ -43,41 +43,11 @@ impl Buffer {
             .map(|r| r.map_err(|e| JsError::new(&e.to_string())))
             .collect::<Result<Vec<i32>, JsError>>()?;
 
-        // let data = (0..size)
-        //     .map(|x| (x as f32 / 10.0).sin() * 50.0)
-        //     .collect::<Vec<f32>>();
-
-        // let x_data = arrow::array::Float32Array::from(
-        //     (0..size).map(|x| (x as f32) * 2.0).collect::<Vec<f32>>(),
-        // );
-        // let y_data = arrow::array::Float32Array::from(data);
-
-        // Todo: this could be generalized. Statistics?
-        let mut x_metadata = HashMap::new();
-        x_metadata.insert(
-            "min".to_owned(),
-            (date.iter().min().unwrap_or(&0)).to_string(),
-        );
-        x_metadata.insert(
-            "max".to_owned(),
-            (date.iter().max().unwrap_or(&0)).to_string(),
-        );
-
-        let mut y_metadata = HashMap::new();
-        y_metadata.insert(
-            "min".to_owned(),
-            deaths.iter().min().unwrap_or(&0).to_string(),
-        );
-        y_metadata.insert(
-            "max".to_owned(),
-            deaths.iter().max().unwrap_or(&0).to_string(),
-        );
-
         let x_data = arrow::array::Date32Array::from(date);
         let y_data = arrow::array::Int32Array::from(deaths);
 
-        let x_field = Field::new("date", DataType::Date32, false).with_metadata(x_metadata);
-        let y_field = Field::new("deaths", DataType::Int32, false).with_metadata(y_metadata);
+        let x_field = Field::new("date", DataType::Date32, false);
+        let y_field = Field::new("deaths", DataType::Int32, false);
 
         let schema = Schema::new(vec![x_field, y_field]);
 
