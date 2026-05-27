@@ -12,6 +12,7 @@ interface VidakChartRenderProps {
   ctx: CanvasRenderingContext2D;
   x: arrow.Vector;
   y: arrow.Vector;
+  yStats: Statistics;
   wordConfig: {
     height: number;
   };
@@ -45,14 +46,14 @@ class VidakLineChart implements VidakChartRender {
     const xSlice = props.x;
     const ySlice = props.y;
     const xStats = VidakChartUtils.getStatistics(xSlice);
-    const yStats = VidakChartUtils.getStatistics(ySlice);
+    const yStats = props.yStats;
     const canvasConfig = props.canvasConfig;
 
     ctx.beginPath();
     ctx.strokeStyle = "#000000";
     ctx.lineWidth = 3;
 
-    const wordHeight = 50;
+    const yLabelPadding = 50;
 
     const xLabelWidth = Math.round(
       ctx.measureText(
@@ -95,7 +96,7 @@ class VidakLineChart implements VidakChartRender {
             timeZone: props.dateOptions?.timeZone,
           }),
           x - xLabelWidth / 2,
-          canvasConfig.height + canvasConfig.inset[1] + wordHeight,
+          canvasConfig.height + canvasConfig.inset[1] + yLabelPadding,
         );
         lastXLabel = currentXLabel;
         ctx.strokeStyle = "#000000";
@@ -172,10 +173,17 @@ class VidakChartImpl implements VidakChartContainer {
 
   render(): void {
     // draw the buffer onto the canvas
-    let end = 200;
-    let start = 0;
     const arr = this.getArrow();
-    this.testRender(0, end, arr);
+    let start = 0;
+    let end = arr.batches[0].data.length;
+
+    const arrSlice = arr.slice(start, end);
+    const x = arrSlice.getChild("date")!;
+    const y = arrSlice.getChild("deaths")!;
+
+    const yStats = VidakChartUtils.getStatistics(y);
+
+    this.testRender(x, y, yStats);
     const maxLength = arr.getChildAt(0)?.length;
 
     let mouseX = 0;
@@ -201,7 +209,10 @@ class VidakChartImpl implements VidakChartContainer {
       start = Math.max(Math.min(start, end - 2), 0);
       // FIXME should be relative to the mouse cursor
       // TODO handle horizontal scroll
-      this.testRender(start, end, arr);
+      const arrSlice = arr.slice(start, end);
+      const x = arrSlice.getChild("date")!;
+      const y = arrSlice.getChild("deaths")!;
+      this.testRender(x, y, yStats);
     });
   }
 
@@ -212,7 +223,7 @@ class VidakChartImpl implements VidakChartContainer {
     );
   }
 
-  getArrow() {
+  getArrow(): arrow.Table {
     return arrow.tableFromIPC(this.getBufferView());
   }
 
@@ -220,27 +231,21 @@ class VidakChartImpl implements VidakChartContainer {
    * Only for testing
    * @deprecated
    */
-  testRender(start: number, end: number, table: arrow.Table) {
+  testRender(x: arrow.Vector, y: arrow.Vector, yStats: Statistics) {
     const ctx = this.getContext2D();
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-
-    const arrSlice = table.slice(start, end);
 
     ctx.font = "500 0.8rem Arial";
     ctx.fillStyle = "#000000";
 
-    const x = arrSlice.getChild("date")!;
-    const y = arrSlice.getChild("deaths")!;
-
     // FIXME only for datetime
-    const yStats = VidakChartUtils.getStatistics(y);
-
-    this.drawGrid(yStats.max);
+    this.drawGrid(yStats);
 
     this.chartTypes["line"].draw({
       ctx,
       x,
       y,
+      yStats,
       dateOptions: {
         locale: "da-DK",
         timeZone: "UTC",
@@ -256,12 +261,14 @@ class VidakChartImpl implements VidakChartContainer {
     });
   }
 
-  private drawGrid(maxY: number) {
+  private drawGrid(stats: Statistics) {
     const axisOffset = 0;
     const amountLines = 6;
+    const xLabelPadding = 20;
 
     const ctx = this.getContext2D();
     // draw horizontal lines and labels
+    const maxXLabelSize = ctx.measureText(stats.max.toString());
     for (let i = 0; i <= amountLines; i++) {
       ctx.beginPath();
       ctx.strokeStyle = "#888888";
@@ -270,15 +277,18 @@ class VidakChartImpl implements VidakChartContainer {
       ctx.moveTo(this.inset[0] - axisOffset, y);
       ctx.lineTo(this.width, y);
       ctx.stroke();
+      // (point - min) / delta;
       ctx.fillText(
-        Math.floor((maxY * (amountLines - i)) / amountLines).toString(),
-        50, // word width
-        y,
+        Math.floor(
+          stats.min + (stats.delta * (amountLines - i)) / amountLines,
+        ).toString(),
+        this.inset[0] - maxXLabelSize.width - xLabelPadding, // word width
+        y + maxXLabelSize.emHeightDescent,
       );
     }
   }
 }
 
 export const createVidak = function () {
-  return new VidakChartImpl(1000, 500);
+  return new VidakChartImpl(800, 400);
 };
