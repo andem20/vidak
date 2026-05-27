@@ -65,10 +65,33 @@ class VidakLineChart implements VidakChartRender {
 
     const xLabelOffset = xLabelWidth / 3;
 
-    let lastXLabel = -1;
-
     const size = xSlice.data[0].length;
 
+    const xLabelAmount = Math.floor(
+      canvasConfig.width / (xLabelWidth + xLabelOffset),
+    );
+
+    const xLabelIncrement = xStats.delta / xLabelAmount;
+
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = 1;
+
+    for (let i = 0; i < xLabelAmount; i++) {
+      const date = xLabelIncrement * i + xStats.min;
+      let x =
+        this.calcPos(date, xStats.min, xStats.delta) *
+        (canvasConfig.width - canvasConfig.inset[0]);
+      ctx.fillText(
+        new Date(date).toLocaleString(props.dateOptions?.locale, {
+          timeZone: props.dateOptions?.timeZone,
+        }),
+        x + canvasConfig.inset[0] - xLabelWidth / 2,
+        canvasConfig.height + canvasConfig.inset[1] + yLabelPadding,
+      );
+    }
+
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = 3;
     // draw line
     // TODO only draw point if non-overlapping
     for (let i = 0; i < size; i++) {
@@ -82,26 +105,6 @@ class VidakLineChart implements VidakChartRender {
       x += canvasConfig.inset[0];
       y += canvasConfig.height + canvasConfig.inset[1];
       ctx.lineTo(x, y);
-
-      // draw label
-      let currentXLabel = Math.floor(
-        (x - canvasConfig.inset[0]) / (xLabelWidth + xLabelOffset),
-      );
-
-      if (currentXLabel > lastXLabel) {
-        ctx.strokeStyle = "#000000";
-        ctx.lineWidth = 1;
-        ctx.fillText(
-          new Date(date).toLocaleString(props.dateOptions?.locale, {
-            timeZone: props.dateOptions?.timeZone,
-          }),
-          x - xLabelWidth / 2,
-          canvasConfig.height + canvasConfig.inset[1] + yLabelPadding,
-        );
-        lastXLabel = currentXLabel;
-        ctx.strokeStyle = "#000000";
-        ctx.lineWidth = 3;
-      }
     }
     ctx.stroke();
 
