@@ -159,7 +159,7 @@ class VidakChartImpl implements VidakChartContainer {
   };
 
   constructor(width: number, height: number) {
-    this.buffer = Buffer.new(1000000);
+    this.buffer = Buffer.new(2);
     this.width = width;
     this.height = height;
     this.canvas.width = this.width + this.inset[0] + this.inset[2];
@@ -184,7 +184,6 @@ class VidakChartImpl implements VidakChartContainer {
   render(): void {
     // draw the buffer onto the canvas
     const arr = this.getArrow();
-    console.log(arr);
     let start = 0;
     let end = arr.batches[0].data.length;
 
