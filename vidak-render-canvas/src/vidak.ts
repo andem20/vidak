@@ -38,6 +38,13 @@ class VidakChartUtils {
     const delta = max - min;
     return { min, max, delta };
   }
+
+  static getStatisticsFromMetadata(field: arrow.Field): Statistics {
+    const min = parseFloat(field.metadata.get("min") ?? "0");
+    const max = parseFloat(field.metadata.get("max") ?? "0");
+    const delta = max - min;
+    return { min, max, delta };
+  }
 }
 
 class VidakLineChart implements VidakChartRender {
@@ -177,14 +184,17 @@ class VidakChartImpl implements VidakChartContainer {
   render(): void {
     // draw the buffer onto the canvas
     const arr = this.getArrow();
+    console.log(arr);
     let start = 0;
     let end = arr.batches[0].data.length;
 
     const arrSlice = arr.slice(start, end);
     const x = arrSlice.getChild("date")!;
-    const y = arrSlice.getChild("deaths")!;
+    const y = arrSlice.getChild("col_1")!;
+    const xField = arr.schema.fields[0];
+    const yField = arr.schema.fields[1];
 
-    const yStats = VidakChartUtils.getStatistics(y);
+    const yStats = VidakChartUtils.getStatisticsFromMetadata(yField);
 
     this.testRender(x, y, yStats);
     const maxLength = arr.getChildAt(0)?.length;
@@ -202,6 +212,7 @@ class VidakChartImpl implements VidakChartContainer {
       );
     });
 
+    // FIXME this should consider min/max of y and keep track of percentage
     this.canvas.addEventListener("wheel", (event) => {
       event.preventDefault();
       if (end - start <= 2 && event.deltaY < 0) {
@@ -209,7 +220,7 @@ class VidakChartImpl implements VidakChartContainer {
       }
 
       const posX = mouseX / (this.width - this.inset[0]);
-      const delta = event.deltaY / 25;
+      const delta = event.deltaY;
       end += delta * (1 - (end >= (maxLength ?? 0) || start === 0 ? 0 : posX));
       start -= delta * (end >= (maxLength ?? 0) || start === 0 ? 1 : posX);
       end = Math.max(Math.min(end, maxLength ?? 0), 2);
@@ -217,7 +228,7 @@ class VidakChartImpl implements VidakChartContainer {
       // TODO handle horizontal scroll
       const arrSlice = arr.slice(start, end);
       const x = arrSlice.getChild("date")!;
-      const y = arrSlice.getChild("deaths")!;
+      const y = arrSlice.getChild("col_1")!;
       this.testRender(x, y, yStats);
     });
   }
