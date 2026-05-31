@@ -204,13 +204,16 @@ class VidakChartImpl implements VidakChartContainer {
 
     this.canvas.addEventListener("wheel", (event) => {
       event.preventDefault();
+      if (end - start <= 2 && event.deltaY < 0) {
+        return;
+      }
+
       const posX = mouseX / (this.width - this.inset[0]);
       const delta = event.deltaY / 25;
       end += delta * (1 - (end >= (maxLength ?? 0) || start === 0 ? 0 : posX));
       start -= delta * (end >= (maxLength ?? 0) || start === 0 ? 1 : posX);
       end = Math.max(Math.min(end, maxLength ?? 0), 2);
       start = Math.max(Math.min(start, end - 2), 0);
-      // FIXME should be relative to the mouse cursor
       // TODO handle horizontal scroll
       const arrSlice = arr.slice(start, end);
       const x = arrSlice.getChild("date")!;
