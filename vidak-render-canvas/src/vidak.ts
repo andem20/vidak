@@ -14,7 +14,6 @@ interface VidakChartContainer {
 
 class VidakChartImpl implements VidakChartContainer {
   private canvas = document.createElement("canvas");
-  private toolTip = document.createElement("div");
   private buffer: Buffer;
   private width: number;
   private height: number;
