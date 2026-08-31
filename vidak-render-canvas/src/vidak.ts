@@ -1,143 +1,9 @@
 import * as wasm from "vidak-wasm/vidak_wasm_bg.wasm";
 import { Buffer } from "vidak-wasm/vidak_wasm";
 import * as arrow from "apache-arrow";
-
-interface Statistics {
-  min: number;
-  max: number;
-  delta: number;
-}
-
-interface VidakChartRenderProps {
-  ctx: CanvasRenderingContext2D;
-  x: arrow.Vector;
-  y: arrow.Vector;
-  yStats: Statistics;
-  wordConfig: {
-    height: number;
-  };
-  canvasConfig: {
-    width: number;
-    height: number;
-    inset: number[];
-  };
-  dateOptions?: {
-    locale: string;
-    timeZone: string;
-  };
-}
-
-interface VidakChartRender {
-  draw(props: VidakChartRenderProps): void;
-}
-
-class VidakChartUtils {
-  static getStatistics(slice: arrow.Vector): Statistics {
-    const min = slice?.get(0);
-    const max = slice?.get(slice.length - 1);
-    const delta = max - min;
-    return { min, max, delta };
-  }
-
-  static getStatisticsFromMetadata(field: arrow.Field): Statistics {
-    const min = parseFloat(field.metadata.get("min") ?? "0");
-    const max = parseFloat(field.metadata.get("max") ?? "0");
-    const delta = max - min;
-    return { min, max, delta };
-  }
-}
-
-class VidakLineChart implements VidakChartRender {
-  draw(props: VidakChartRenderProps): void {
-    const ctx = props.ctx;
-    const xSlice = props.x;
-    const ySlice = props.y;
-    const xStats = VidakChartUtils.getStatistics(xSlice);
-    const yStats = props.yStats;
-    const canvasConfig = props.canvasConfig;
-
-    ctx.beginPath();
-    ctx.strokeStyle = "#000000";
-    ctx.lineWidth = 3;
-
-    const yLabelPadding = 50;
-
-    const xLabelWidth = Math.round(
-      ctx.measureText(
-        new Date(xSlice.get(0)).toLocaleString(props.dateOptions?.locale, {
-          timeZone: props.dateOptions?.timeZone,
-        }),
-      ).width,
-    );
-
-    const xLabelOffset = xLabelWidth / 3;
-
-    const size = xSlice.data[0].length;
-
-    const xLabelAmount = Math.floor(
-      canvasConfig.width / (xLabelWidth + xLabelOffset),
-    );
-
-    const xLabelIncrement = xStats.delta / xLabelAmount;
-
-    ctx.strokeStyle = "#000000";
-    ctx.lineWidth = 1;
-
-    for (let i = 0; i < xLabelAmount; i++) {
-      const date = xLabelIncrement * i + xStats.min;
-      let x =
-        this.calcPos(date, xStats.min, xStats.delta) *
-        (canvasConfig.width - canvasConfig.inset[0]);
-      ctx.fillText(
-        new Date(date).toLocaleString(props.dateOptions?.locale, {
-          timeZone: props.dateOptions?.timeZone,
-        }),
-        x + canvasConfig.inset[0] - xLabelWidth / 2,
-        canvasConfig.height + canvasConfig.inset[1] + yLabelPadding,
-      );
-    }
-
-    ctx.strokeStyle = "#000000";
-    ctx.lineWidth = 3;
-    // draw line
-    // TODO only draw point if non-overlapping
-    for (let i = 0; i < size; i++) {
-      const date = xSlice.get(i);
-      let x =
-        this.calcPos(date, xStats.min, xStats.delta) *
-        (canvasConfig.width - canvasConfig.inset[0]);
-      const deaths = ySlice.get(i);
-      let y =
-        -this.calcPos(deaths, yStats.min, yStats.delta) * canvasConfig.height;
-      x += canvasConfig.inset[0];
-      y += canvasConfig.height + canvasConfig.inset[1];
-      ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-
-    // draw points
-    for (let i = 0; i < size; i++) {
-      // FIXME
-      ctx.beginPath();
-      const date = xSlice.get(i);
-      let x =
-        this.calcPos(date, xStats.min, xStats.delta) *
-        (canvasConfig.width - canvasConfig.inset[0]);
-      const deaths = ySlice.get(i);
-      let y =
-        -this.calcPos(deaths, yStats.min, yStats.delta) * canvasConfig.height;
-      x += canvasConfig.inset[0];
-      y += canvasConfig.height + canvasConfig.inset[1];
-      ctx.arc(x, y, 5, 0, 2 * Math.PI);
-      ctx.fillStyle = "#ff0000";
-      ctx.fill();
-    }
-  }
-
-  private calcPos(point: number, min: number, delta: number) {
-    return (point - min) / delta;
-  }
-}
+import { VidakChartUtils, type Statistics } from "./vidak-utils";
+import type { VidakChartRender } from "./charts/chartrender";
+import { VidakLineChart } from "./charts/line";
 
 // CONTAINER
 interface VidakChartContainer {
@@ -148,6 +14,7 @@ interface VidakChartContainer {
 
 class VidakChartImpl implements VidakChartContainer {
   private canvas = document.createElement("canvas");
+  private toolTip = document.createElement("div");
   private buffer: Buffer;
   private width: number;
   private height: number;
@@ -159,12 +26,38 @@ class VidakChartImpl implements VidakChartContainer {
   };
 
   constructor(width: number, height: number) {
+    console.time("CreateBuffer");
     this.buffer = Buffer.new(2);
+    console.timeEnd("CreateBuffer");
     this.width = width;
     this.height = height;
     this.canvas.width = this.width + this.inset[0] + this.inset[2];
     this.canvas.height = this.height + this.inset[1] + this.inset[3];
     this.canvas.style.backgroundColor = "#ededed";
+  }
+
+  getWidth(): number {
+    return this.width;
+  }
+
+  getHeight(): number {
+    return this.height;
+  }
+
+  getMaxX(): number {
+    return this.width + this.inset[0] - this.inset[2];
+  }
+
+  getMinX(): number {
+    return this.inset[0];
+  }
+
+  getMaxY(): number {
+    return this.height + this.inset[1] - this.inset[3];
+  }
+
+  getMinY(): number {
+    return this.inset[1];
   }
 
   getContext2D(): CanvasRenderingContext2D {
@@ -195,7 +88,7 @@ class VidakChartImpl implements VidakChartContainer {
 
     const yStats = VidakChartUtils.getStatisticsFromMetadata(yField);
 
-    this.testRender(x, y, yStats);
+    this.updateCanvas(x, y, yStats);
     const maxLength = arr.getChildAt(0)?.length;
 
     let mouseX = 0;
@@ -228,7 +121,7 @@ class VidakChartImpl implements VidakChartContainer {
       const arrSlice = arr.slice(start, end);
       const x = arrSlice.getChild("date")!;
       const y = arrSlice.getChild("col_1")!;
-      this.testRender(x, y, yStats);
+      this.updateCanvas(x, y, yStats);
     });
   }
 
@@ -243,11 +136,7 @@ class VidakChartImpl implements VidakChartContainer {
     return arrow.tableFromIPC(this.getBufferView());
   }
 
-  /**
-   * Only for testing
-   * @deprecated
-   */
-  testRender(x: arrow.Vector, y: arrow.Vector, yStats: Statistics) {
+  updateCanvas(x: arrow.Vector, y: arrow.Vector, yStats: Statistics) {
     const ctx = this.getContext2D();
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
@@ -278,7 +167,6 @@ class VidakChartImpl implements VidakChartContainer {
   }
 
   private drawGrid(stats: Statistics) {
-    const axisOffset = 0;
     const amountLines = 6;
     const xLabelPadding = 20;
 
@@ -289,16 +177,16 @@ class VidakChartImpl implements VidakChartContainer {
       ctx.beginPath();
       ctx.strokeStyle = "#888888";
       ctx.lineWidth = 1;
-      const y = (this.height * i) / amountLines + this.inset[1];
-      ctx.moveTo(this.inset[0] - axisOffset, y);
-      ctx.lineTo(this.width, y);
+      const y = (this.height * i) / amountLines + this.getMinY();
+      ctx.moveTo(this.getMinX(), y);
+      ctx.lineTo(this.getMaxX(), y);
       ctx.stroke();
       // (point - min) / delta;
       ctx.fillText(
         Math.floor(
           stats.min + (stats.delta * (amountLines - i)) / amountLines,
         ).toString(),
-        this.inset[0] - maxXLabelSize.width - xLabelPadding, // word width
+        this.getMinX() - maxXLabelSize.width - xLabelPadding, // word width
         y + maxXLabelSize.emHeightDescent,
       );
     }
